@@ -1,31 +1,35 @@
-"use server"
+"use server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth";
 import prisma from "@repo/db/client";
-import { create } from "domain";
+import { resolve } from "path";
 
-async function createOnRampTransaction(amount: number, provider: string, userId: number) {
-    const token = Math.random().toString(); // const token = await axios.get("https://api.hdfc.fjksjdflkajlsdkfjalsjdflajsdf") 
-    if (!userId) {
-        return {
-            message: "User not logged in"
-        }
-    }
-
-    await prisma.onRampTransaction.create({
-        // @ts-ignore
-        data: {
-            userId: Number(userId),
-            amount: amount * 100,
-            startTime: new Date(),
-            provider: provider,
-            token,
-            status: "Processing"
-        }
-    })
+async function createOnRampTransaction(
+  amount: number,
+  provider: string,
+  userId: number,
+) {
+  const token = Math.random().toString(); // const token = await axios.get("https://api.hdfc.fjksjdflkajlsdkfjalsjdflajsdf")
+  if (!userId) {
     return {
-        message: "On ramp transaction created"
-    }
+      message: "User not logged in",
+    };
+  }
+
+  await prisma.onRampTransaction.create({
+    // @ts-ignore
+    data: {
+      userId: Number(userId),
+      amount: amount * 100,
+      startTime: new Date(),
+      provider: provider,
+      token,
+      status: "Success",
+    },
+  });
+  return {
+    message: "On ramp transaction created",
+  };
 }
 
 export async function transfer(to: string, amount: number, provider: string) {
@@ -50,6 +54,8 @@ export async function transfer(to: string, amount: number, provider: string) {
   }
 
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT * FROM "Balance" WHERE "userId" = ${Number(from)} FOR UPDATE`; // Locking the row to avoid race conditions
+
     const fromBalance = await tx.balance.findUnique({
       where: {
         userId: Number(from),
@@ -59,6 +65,12 @@ export async function transfer(to: string, amount: number, provider: string) {
     if (!fromBalance || fromBalance.amount < amount) {
       throw new Error("Insufficient Balance");
     }
+
+    // console.log("Before sleep");
+    // await new Promise((resolve) => {
+    //   setTimeout(resolve, 4000);
+    // });
+    // console.log("After sleep");
 
     await tx.balance.update({
       where: {
@@ -81,8 +93,17 @@ export async function transfer(to: string, amount: number, provider: string) {
         },
       },
     });
-  });
 
-  createOnRampTransaction(amount, provider, toUser.id);
-  createOnRampTransaction(-1 * amount, provider, from);
+    createOnRampTransaction(amount, provider, toUser.id);
+    createOnRampTransaction(-1 * amount, provider, Number(from));
+
+    await tx.p2PTransfer.create({
+        data: {
+            fromUserId: Number(from),
+            toUserId: toUser.id,
+            amount,
+            timeStamp: new Date()
+        }
+    })
+  });
 }
