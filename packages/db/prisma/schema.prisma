@@ -12,10 +12,10 @@ model User {
   name              String?
   number            String              @unique
   password          String
-  OnRmpTransaction OnRampTransaction[]
+  OnRmpTransaction  OnRampTransaction[]
   Balance           Balance[]
-  sentTransfers     P2PTransfer[] @relation(name: "fromUserRelation")
-  receivedTransfers P2PTransfer[] @relation(name: "toUserRelation")
+  sentTransfers     P2PTransfer[]       @relation(name: "fromUserRelation")
+  receivedTransfers P2PTransfer[]       @relation(name: "toUserRelation")
 }
 
 model Merchant {
